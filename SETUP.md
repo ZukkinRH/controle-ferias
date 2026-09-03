@@ -45,6 +45,32 @@ aqui.
    mudança aparece lá também — é o sinal de que o Firestore está funcionando como banco
    compartilhado de verdade.
 
+## 6. Ativar o botão "Agendar Férias" (envio de e-mail instantâneo)
+
+O botão "agendar férias" que aparece em cada colaborador (pro gestor do time e pro RH)
+manda um e-mail na hora pros endereços cadastrados em "alertas por e-mail". Isso usa o
+EmailJS, um serviço gratuito que manda e-mail direto do navegador, sem precisar de
+servidor. Enquanto não configurar, o botão avisa que o envio ainda não está pronto.
+
+1. Crie uma conta grátis em [emailjs.com](https://www.emailjs.com) (plano free cobre até
+   200 e-mails/mês, mais que suficiente aqui).
+2. **Email Services → Add New Service** → escolha Gmail (ou o provedor que preferir) e
+   conecte a conta que vai efetivamente disparar os e-mails. Anote o **Service ID**.
+3. **Email Templates → Create New Template**. No campo **To Email**, coloque
+   `{{to_email}}` (isso permite mandar pra vários endereços de uma vez, separados por
+   vírgula). No corpo do template, sugestão de texto usando as variáveis disponíveis:
+   ```
+   Assunto: Agendamento de férias solicitado — {{colaborador}}
+
+   {{solicitado_por}} solicitou o agendamento de férias de {{colaborador}}
+   ({{departamento}} — {{cargo}}) em {{data_solicitacao}}.
+   ```
+   Anote o **Template ID**.
+4. **Account → General** (ou no ícone de engrenagem) → copie a **Public Key**.
+5. Me envie os 3 valores (Service ID, Template ID, Public Key) aqui no chat — eu preencho
+   o `index.html` (bloco `EMAILJS_PUBLIC_KEY` / `EMAILJS_SERVICE_ID` /
+   `EMAILJS_TEMPLATE_ID`, perto do `firebaseConfig`) e faço o push.
+
 ---
 
 Senhas de acesso por time (troque quando quiser, estão em `PIN_MAP` no `index.html`):
