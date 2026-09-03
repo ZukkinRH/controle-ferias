@@ -51,10 +51,10 @@ Senhas de acesso por time (troque quando quiser, estão em `PIN_MAP` no `index.h
 
 | Time | Senha |
 |---|---|
-| Operações | 4821 |
-| Zpromo | 3067 |
-| Projetos | 5590 |
-| Qualidade | 1274 |
+| Operações | zukkinop |
+| Zpromo | zukkinpromo |
+| Projetos | zukkinpj |
+| Qualidade | zukkinql |
 | Desenvolvimento | 8036 |
-| Zrobot | 2951 |
-| RH (administração — vê tudo, marca "Enviado") | 7413 |
+| Zrobot | zukkinrobot |
+| RH (administração — vê tudo, marca "Enviado") | zukkinrh |
