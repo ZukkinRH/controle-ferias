@@ -1,0 +1,631 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Controle de Férias — Zukkin</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+
+<!-- Firebase (banco de dados real — Firestore — e autenticação anônima, sem tela de login "de verdade";
+     o login por time abaixo é uma trava simples de PIN, feita no próprio app, não pelo Firebase) -->
+<script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore-compat.js"></script>
+
+<style>
+  :root{
+    --bg:#F4F5F3;
+    --surface:#FFFFFF;
+    --surface-2:#EEF1EC;
+    --surface-3:#E7EAE3;
+    --border:#DDE1D7;
+    --border-soft:#E7EAE1;
+    --text:#161C18;
+    --text-muted:#5E685F;
+    --text-faint:#8A937E;
+    --accent:#1B5A4A;
+    --accent-strong:#0F3F33;
+    --accent-soft:#2E7A64;
+    --accent-wash:#E4EFE9;
+    --ink:#0D1210;
+    --ok:#2E7D4F;
+    --ok-wash:#E3F1E7;
+    --warn:#B0770A;
+    --warn-wash:#FBEFD9;
+    --critical:#AE3324;
+    --critical-wash:#F8E2DD;
+    --future:#8B9285;
+    --future-wash:#EDEFE8;
+    --shadow-sm: 0 1px 2px rgba(13,18,16,0.05);
+    --shadow-md: 0 2px 4px rgba(13,18,16,0.05), 0 10px 26px -14px rgba(13,18,16,0.22);
+    --shadow-lg: 0 12px 36px -12px rgba(13,18,16,0.28);
+    --radius-sm: 6px;
+    --radius-md: 10px;
+    --radius-lg: 16px;
+  }
+  *{ box-sizing:border-box; }
+  ::selection{ background:var(--accent-wash); color:var(--accent-strong); }
+  html,body{ margin:0; padding:0; }
+  body{
+    background:var(--bg); color:var(--text);
+    font-family:"IBM Plex Sans", system-ui, sans-serif;
+    line-height:1.5; -webkit-font-smoothing:antialiased; -moz-osx-font-smoothing:grayscale;
+    font-size:14px;
+  }
+  h1,h2,h3{ font-family:"Manrope", system-ui, sans-serif; font-weight:700; margin:0; letter-spacing:-0.01em; }
+  .tnum{ font-variant-numeric:tabular-nums; }
+  .mono{ font-family:"IBM Plex Mono", ui-monospace, monospace; }
+  a{ color:var(--accent-soft); text-decoration:none; }
+  a:hover{ text-decoration:underline; }
+  button{ font:inherit; }
+  svg{ display:block; flex:none; }
+  [hidden]{ display:none !important; }
+  :focus-visible{ outline:2px solid var(--accent-soft); outline-offset:2px; }
+
+  .brand-mark{
+    width:32px; height:32px; border-radius:9px; flex:none;
+    background:linear-gradient(155deg, var(--accent-strong), var(--accent));
+    color:#fff; display:flex; align-items:center; justify-content:center;
+    font-family:"Manrope",sans-serif; font-weight:800; font-size:15px; letter-spacing:-0.02em;
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,0.14), var(--shadow-sm);
+  }
+  .brand-mark.lg{ width:46px; height:46px; border-radius:13px; font-size:20px; }
+
+  .appbar{ position:sticky; top:0; z-index:20; background:var(--surface); border-bottom:1px solid var(--border-soft); }
+  .appbar-accent{ height:3px; background:linear-gradient(90deg, var(--accent-strong), var(--accent-soft) 45%, var(--accent-wash)); }
+  .appbar-inner{ max-width:1220px; margin:0 auto; padding:13px 24px; display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap; }
+  .appbar-brand{ display:flex; align-items:center; gap:11px; }
+  .appbar-brand .wordmark{ font-family:"Manrope",sans-serif; font-weight:800; font-size:16px; letter-spacing:-0.01em; line-height:1.15; }
+  .appbar-brand .product{ font-size:11.5px; color:var(--text-muted); font-weight:500; }
+  .appbar-right{ display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
+  .session-pill{ display:inline-flex; align-items:center; gap:7px; font-size:11.5px; background:var(--surface-2); border:1px solid var(--border-soft); color:var(--text-muted); padding:6px 11px 6px 9px; border-radius:99px; font-weight:600; }
+  .sync-dot{ width:6px; height:6px; border-radius:50%; background:var(--ok); flex:none; box-shadow:0 0 0 3px var(--ok-wash); }
+  .sync-dot.off{ background:var(--future); box-shadow:0 0 0 3px var(--future-wash); }
+  .sync-dot.error{ background:var(--critical); box-shadow:0 0 0 3px var(--critical-wash); }
+  .who-pill{ font-size:12px; color:var(--text-muted); display:flex; align-items:center; gap:6px; }
+  .who-pill strong{ color:var(--text); font-weight:700; }
+
+  .wrap{ max-width:1220px; margin:0 auto; padding:26px 24px 72px; display:flex; flex-direction:column; gap:24px; }
+
+  .lock-wrap{ min-height:88vh; display:flex; align-items:center; justify-content:center; padding:24px;
+    background: radial-gradient(760px 420px at 50% -8%, var(--accent-wash), transparent 65%), var(--bg); }
+  .lock-card{ background:var(--surface); border:1px solid var(--border-soft); border-radius:var(--radius-lg); box-shadow:var(--shadow-lg); padding:36px 34px 32px; width:100%; max-width:392px; display:flex; flex-direction:column; gap:18px; }
+  .lock-brand{ display:flex; align-items:center; gap:12px; margin-bottom:2px; }
+  .lock-brand .wordmark{ font-family:"Manrope",sans-serif; font-weight:800; font-size:17px; }
+  .lock-brand .product{ font-size:11.5px; color:var(--text-muted); font-weight:600; letter-spacing:0.01em; }
+  .lock-card h1{ font-size:20px; margin-top:2px; }
+  .lock-card p.hint{ font-size:12.5px; color:var(--text-muted); margin:0; line-height:1.55; }
+  .field{ display:flex; flex-direction:column; gap:6px; }
+  .field label{ font-size:11.5px; color:var(--text-muted); font-weight:700; letter-spacing:0.02em; text-transform:uppercase; }
+  .field select, .field input{ font:inherit; font-size:14.5px; background:var(--surface); border:1px solid var(--border); color:var(--text); border-radius:var(--radius-sm); padding:11px 13px; transition:border-color .15s, box-shadow .15s; }
+  .field select:focus, .field input:focus{ outline:none; border-color:var(--accent-soft); box-shadow:0 0 0 3px var(--accent-wash); }
+  .field input[type="password"]{ letter-spacing:0.5em; font-family:"IBM Plex Mono",monospace; text-align:center; font-size:17px; padding:11px 8px; }
+  .field input[type="password"]::placeholder{ letter-spacing:0.5em; }
+
+  .btn{ font-size:13.5px; font-weight:700; border-radius:var(--radius-sm); padding:10px 17px; border:1px solid transparent; cursor:pointer; display:inline-flex; align-items:center; justify-content:center; gap:6px; transition:background .15s, border-color .15s, transform .05s, box-shadow .15s; }
+  .btn:active{ transform:translateY(1px); }
+  .btn-primary{ background:var(--accent); color:#fff; box-shadow:var(--shadow-sm); }
+  .btn-primary:hover{ background:var(--accent-strong); }
+  .btn-ghost{ background:var(--surface); border-color:var(--border); color:var(--text); }
+  .btn-ghost:hover{ background:var(--surface-2); border-color:var(--border); }
+  .btn-small{ font-size:11.5px; padding:6px 12px; border-radius:7px; font-weight:600; }
+  .btn-block{ width:100%; }
+  .lock-error{ font-size:12.5px; color:var(--critical); min-height:16px; font-weight:600; }
+
+  .eyebrow{ font-family:"IBM Plex Mono", monospace; font-size:11px; letter-spacing:0.1em; text-transform:uppercase; color:var(--accent-soft); font-weight:600; }
+
+  .stats{ display:grid; grid-template-columns:repeat(4,1fr); gap:14px; }
+  .stat{ background:var(--surface); border:1px solid var(--border-soft); border-radius:var(--radius-md); padding:16px 18px; display:flex; align-items:flex-start; gap:13px; box-shadow:var(--shadow-sm); }
+  .stat .icon-chip{ width:34px; height:34px; border-radius:9px; display:flex; align-items:center; justify-content:center; flex:none; background:var(--chip-bg, var(--surface-2)); color:var(--chip-fg, var(--text-muted)); }
+  .stat .body{ display:flex; flex-direction:column; gap:2px; min-width:0; }
+  .stat .n{ font-family:"Manrope",sans-serif; font-size:25px; font-weight:800; letter-spacing:-0.02em; font-variant-numeric:tabular-nums; line-height:1.1; }
+  .stat .l{ font-size:12px; color:var(--text-muted); font-weight:500; }
+  .stat.s-critical .icon-chip{ --chip-bg:var(--critical-wash); --chip-fg:var(--critical); }
+  .stat.s-warn .icon-chip{ --chip-bg:var(--warn-wash); --chip-fg:var(--warn); }
+  .stat.s-accent .icon-chip{ --chip-bg:var(--accent-wash); --chip-fg:var(--accent-strong); }
+
+  .panel{ background:var(--surface); border:1px solid var(--border-soft); border-radius:var(--radius-md); box-shadow:var(--shadow-sm); overflow:hidden; }
+  .panel-head{ padding:15px 20px; border-bottom:1px solid var(--border-soft); display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; }
+  .panel-head h2{ font-size:15.5px; font-weight:700; }
+  .panel-head .count{ font-family:"IBM Plex Mono",monospace; font-size:11px; color:var(--text-faint); background:var(--surface-2); padding:3px 8px; border-radius:99px; }
+  .action-list{ display:flex; flex-direction:column; }
+  .action-row{ display:grid; grid-template-columns: 1.7fr 1fr 0.8fr auto; gap:14px; align-items:center; padding:12px 20px; border-bottom:1px solid var(--border-soft); font-size:13.5px; border-left:3px solid var(--rowline, transparent); }
+  .action-row.critical{ --rowline:var(--critical); }
+  .action-row.warn{ --rowline:var(--warn); }
+  .action-row:last-child{ border-bottom:none; }
+  .action-row .who{ font-weight:700; letter-spacing:-0.005em; }
+  .action-row .dept{ color:var(--text-muted); font-size:11.5px; margin-top:1px; }
+  .action-row .lbl{ font-size:10.5px; text-transform:uppercase; letter-spacing:0.06em; color:var(--text-faint); display:block; margin-bottom:1px; }
+  .empty-note{ padding:22px 20px; color:var(--text-muted); font-size:13px; text-align:center; }
+
+  .pill{ display:inline-flex; align-items:center; gap:5px; font-size:11px; font-weight:700; padding:3.5px 9px; border-radius:99px; white-space:nowrap; line-height:1.4; letter-spacing:0.01em; }
+  .pill::before{ content:""; width:5px; height:5px; border-radius:50%; background:currentColor; flex:none; }
+  .pill.critical{ background:var(--critical-wash); color:var(--critical); }
+  .pill.warn{ background:var(--warn-wash); color:var(--warn); }
+  .pill.ok{ background:var(--ok-wash); color:var(--ok); }
+  .pill.future{ background:var(--future-wash); color:var(--future); }
+
+  .filters{ display:flex; flex-wrap:wrap; gap:10px; align-items:center; }
+  .filters input[type="search"]{ font:inherit; font-size:13px; background:var(--surface); border:1px solid var(--border); color:var(--text); border-radius:var(--radius-sm); padding:8px 12px; min-width:230px; flex:1 1 230px; }
+  .filters input[type="search"]:focus{ outline:none; border-color:var(--accent-soft); box-shadow:0 0 0 3px var(--accent-wash); }
+  .result-count{ font-size:11.5px; color:var(--text-faint); font-family:"IBM Plex Mono",monospace; margin-left:auto; }
+
+  .card-list{ display:flex; flex-direction:column; }
+  .emp-card{ padding:16px 20px; border-bottom:1px solid var(--border-soft); display:flex; flex-direction:column; gap:11px; }
+  .emp-card:last-child{ border-bottom:none; }
+  .emp-card:hover{ background:var(--surface-2); }
+  .emp-head{ display:flex; justify-content:space-between; align-items:flex-start; gap:10px; flex-wrap:wrap; }
+  .emp-name{ font-weight:700; font-size:14.5px; letter-spacing:-0.005em; }
+  .emp-sub{ color:var(--text-muted); font-size:12px; margin-top:2px; }
+  .situ{ font-size:11px; font-weight:700; padding:3px 9px; border-radius:99px; white-space:nowrap; }
+  .situ.vencidas{ color:var(--critical); background:var(--critical-wash); }
+  .situ.nao-vencidas{ color:var(--text-muted); background:var(--surface-2); }
+
+  .gozo-list{ display:flex; flex-direction:column; gap:7px; }
+  .gozo-row{ display:flex; align-items:center; gap:11px; font-size:12.5px; flex-wrap:wrap; padding:2px 0; }
+  .gozo-row .d{ font-family:"IBM Plex Mono",monospace; font-variant-numeric:tabular-nums; font-weight:500; }
+  .gozo-row .n{ color:var(--text-muted); font-size:11.5px; }
+  .gozo-meta{ color:var(--text-faint); font-size:11px; font-style:italic; }
+  .none-marker{ color:var(--text-faint); font-size:12.5px; font-style:italic; }
+
+  .edit-form{ display:flex; gap:9px; align-items:flex-end; flex-wrap:wrap; background:var(--surface-2); border:1px solid var(--border-soft); border-radius:var(--radius-sm); padding:11px; }
+  .edit-form .field{ gap:4px; }
+  .edit-form input{ font-size:13px; padding:7px 9px; }
+  .edit-form input[type="date"]{ width:152px; }
+  .edit-form input[type="number"]{ width:76px; }
+
+  footer{ border-top:1px solid var(--border-soft); padding-top:18px; font-size:11.5px; color:var(--text-faint); display:flex; justify-content:space-between; flex-wrap:wrap; gap:8px; line-height:1.6; }
+
+  .toast{ position:fixed; bottom:22px; left:50%; transform:translateX(-50%) translateY(4px); background:var(--ink); color:var(--bg); padding:10px 18px; border-radius:var(--radius-sm); font-size:13px; font-weight:600; box-shadow:var(--shadow-lg); opacity:0; pointer-events:none; transition:opacity .2s, transform .2s; z-index:50; }
+  .toast.show{ opacity:1; transform:translateX(-50%) translateY(0); }
+
+  .setup-banner{ background:var(--warn-wash); color:var(--warn); border:1px solid var(--warn); border-radius:var(--radius-md); padding:14px 18px; font-size:13px; line-height:1.6; max-width:520px; }
+  .setup-banner code{ background:rgba(0,0,0,0.06); padding:1px 5px; border-radius:4px; }
+
+  @media (max-width:760px){
+    .stats{ grid-template-columns:repeat(2,1fr); }
+    .action-row{ grid-template-columns:1fr; row-gap:6px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ============ LOCK SCREEN ============ -->
+<div class="lock-wrap" id="lockScreen">
+  <div class="lock-card">
+    <div class="lock-brand">
+      <div class="brand-mark lg">Z</div>
+      <div>
+        <div class="wordmark">Zukkin</div>
+        <div class="product">Controle de Férias</div>
+      </div>
+    </div>
+    <div>
+      <h1>Entrar no painel</h1>
+      <p class="hint" style="margin-top:6px;">Escolha seu time e digite a senha que o RH te passou. Você só vai ver e editar os colaboradores do seu time.</p>
+    </div>
+    <div class="field">
+      <label for="deptSelectLock">Time</label>
+      <select id="deptSelectLock"></select>
+    </div>
+    <div class="field">
+      <label for="pinInput">Senha do time</label>
+      <input type="password" id="pinInput" inputmode="numeric" maxlength="4" placeholder="••••">
+    </div>
+    <div class="lock-error" id="lockError"></div>
+    <button class="btn btn-primary btn-block" id="lockSubmit">Entrar</button>
+    <div id="setupBanner" class="setup-banner" hidden>
+      Configuração do Firebase ainda pendente neste arquivo (<code>firebaseConfig</code>). O painel funciona, mas nada é salvo até isso ser preenchido — veja o <code>SETUP.md</code> do repositório.
+    </div>
+  </div>
+</div>
+
+<!-- ============ MAIN APP ============ -->
+<div id="app" hidden>
+
+  <div class="appbar">
+    <div class="appbar-accent"></div>
+    <div class="appbar-inner">
+      <div class="appbar-brand">
+        <div class="brand-mark">Z</div>
+        <div>
+          <div class="wordmark">Zukkin</div>
+          <div class="product">Controle de Férias</div>
+        </div>
+      </div>
+      <div class="appbar-right">
+        <span class="session-pill"><span class="sync-dot" id="syncDot"></span><span id="syncLabel">conectando…</span></span>
+        <span class="who-pill">Time: <strong id="whoAmI">—</strong></span>
+        <a href="#" id="switchTeam" style="font-size:12px; font-weight:600;">trocar</a>
+      </div>
+    </div>
+  </div>
+
+  <div class="wrap">
+
+    <section class="stats" id="stats" hidden></section>
+
+    <section class="panel" id="actionPanel" hidden>
+      <div class="panel-head">
+        <h2>Precisa enviar pra contabilidade</h2>
+        <span class="count" id="actionCount"></span>
+      </div>
+      <div class="action-list" id="actionList"></div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head" style="flex-wrap:wrap; gap:10px;">
+        <div class="filters" style="flex:1;">
+          <input type="search" id="search" placeholder="Buscar colaborador…">
+          <span class="result-count" id="resultCount"></span>
+        </div>
+      </div>
+      <div class="card-list" id="cardList"></div>
+    </section>
+
+    <footer>
+      <span id="ruleNote">Regra de alerta: fica pendente a partir do 1º dia do mês em que o período de gozo começa, até o RH marcar como enviado.</span>
+      <span>Dados salvos no Firestore — qualquer computador que abrir este link vê e edita a mesma base.</span>
+    </footer>
+
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<!-- ============================================================
+     CONFIGURAÇÃO DO FIREBASE
+     Preencha com os valores do SEU projeto (Console do Firebase →
+     Configurações do projeto → Seus apps → </> Web). Veja o SETUP.md.
+     ============================================================ -->
+<script>
+const firebaseConfig = {
+  apiKey: "SUA_API_KEY_AQUI",
+  authDomain: "SEU_PROJETO.firebaseapp.com",
+  projectId: "SEU_PROJETO",
+  storageBucket: "SEU_PROJETO.firebasestorage.app",
+  messagingSenderId: "SEU_SENDER_ID",
+  appId: "SEU_APP_ID"
+};
+const FIREBASE_CONFIGURED = firebaseConfig.apiKey !== "SUA_API_KEY_AQUI";
+let db = null;
+let auth = null;
+if(FIREBASE_CONFIGURED){
+  firebase.initializeApp(firebaseConfig);
+  db = firebase.firestore();
+  auth = firebase.auth();
+}
+</script>
+
+<script>
+/* ---------- icons ---------- */
+const ICONS = {
+  users: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17 20v-1.5a3.5 3.5 0 0 0-3.5-3.5h-5A3.5 3.5 0 0 0 5 18.5V20"/><circle cx="9.5" cy="8" r="3.25"/><path d="M15.5 4.2a3.25 3.25 0 0 1 0 6.35"/><path d="M19.5 20v-1.5a3.4 3.4 0 0 0-2.2-3.18"/></svg>',
+  calendarAlert: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="15.5" rx="2.3"/><path d="M3.5 9.7h17"/><path d="M8 3v4M16 3v4"/><path d="M12 13v3"/><circle cx="12" cy="18.1" r="0.15" fill="currentColor"/></svg>',
+  clock: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12.5" r="8.25"/><path d="M12 7.7v5l3.4 2"/></svg>',
+  alertTriangle: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10.6 4.4 2.9 18a1.7 1.7 0 0 0 1.5 2.5h15.2A1.7 1.7 0 0 0 21.1 18L13.4 4.4a1.7 1.7 0 0 0-2.8 0Z"/><path d="M12 10v4"/><circle cx="12" cy="16.7" r="0.15" fill="currentColor"/></svg>'
+};
+
+/* ---------- config ---------- */
+const PIN_MAP = {
+  "Operações": "4821",
+  "Zpromo": "3067",
+  "Projetos": "5590",
+  "Qualidade": "1274",
+  "Desenvolvimento": "8036",
+  "Zrobot": "2951",
+  "RH": "7413"
+};
+const ADMIN_DEPT = "RH";
+const DEPTS = Object.keys(PIN_MAP);
+
+const STATUS_LABEL = {ok:'Enviado', warn:'Pendente', critical:'Atrasado', future:'Aguardando'};
+
+let DATA = [];
+let ME = null; // { dept, isAdmin }
+
+/* ---------- helpers ---------- */
+function parseBR(d){ if(!d) return null; const [dd,mm,yy] = d.split('/').map(Number); return new Date(yy, mm-1, dd); }
+function toBR(iso){ if(!iso) return null; const [y,m,d] = iso.split('-'); return `${d}/${m}/${y}`; }
+function toISO(br){ if(!br) return ''; const [d,m,y] = br.split('/'); return `${y}-${m.padStart(2,'0')}-${d.padStart(2,'0')}`; }
+function fmt(d){ if(!d) return '—'; return d.toLocaleDateString('pt-BR', {day:'2-digit', month:'2-digit', year:'numeric'}); }
+function firstOfMonth(d){ return new Date(d.getFullYear(), d.getMonth(), 1); }
+function startOfToday(){ const n=new Date(); return new Date(n.getFullYear(), n.getMonth(), n.getDate()); }
+const TODAY = startOfToday();
+
+function gozoStatus(g){
+  if(g.enviado === 'Sim') return 'ok';
+  const start = parseBR(g.inicio);
+  if(!start) return 'future';
+  const alertStart = firstOfMonth(start);
+  if(TODAY < alertStart) return 'future';
+  if(TODAY < start) return 'warn';
+  return 'critical';
+}
+
+function showToast(msg){
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(showToast._t);
+  showToast._t = setTimeout(()=> t.classList.remove('show'), 2400);
+}
+
+/* ---------- lock screen ---------- */
+const deptSelectLock = document.getElementById('deptSelectLock');
+DEPTS.forEach(d=>{
+  const o = document.createElement('option');
+  o.value = d;
+  o.textContent = d === ADMIN_DEPT ? 'RH — administração (vê tudo)' : d;
+  deptSelectLock.appendChild(o);
+});
+if(!FIREBASE_CONFIGURED){ document.getElementById('setupBanner').hidden = false; }
+
+function tryUnlock(){
+  const dept = deptSelectLock.value;
+  const pin = document.getElementById('pinInput').value.trim();
+  if(PIN_MAP[dept] && PIN_MAP[dept] === pin){
+    ME = { dept, isAdmin: dept === ADMIN_DEPT };
+    try{ localStorage.setItem('ferias_session', JSON.stringify(ME)); }catch(e){}
+    startApp();
+  }else{
+    document.getElementById('lockError').textContent = 'Senha incorreta pro time selecionado.';
+  }
+}
+document.getElementById('lockSubmit').addEventListener('click', tryUnlock);
+document.getElementById('pinInput').addEventListener('keydown', e=>{ if(e.key==='Enter') tryUnlock(); });
+
+document.getElementById('switchTeam').addEventListener('click', (e)=>{
+  e.preventDefault();
+  try{ localStorage.removeItem('ferias_session'); }catch(err){}
+  location.reload();
+});
+
+(function restoreSession(){
+  try{
+    const saved = JSON.parse(localStorage.getItem('ferias_session') || 'null');
+    if(saved && PIN_MAP[saved.dept]){
+      ME = saved;
+      startApp();
+    }
+  }catch(e){}
+})();
+
+/* ---------- app bootstrap ---------- */
+async function startApp(){
+  document.getElementById('lockScreen').hidden = true;
+  const app = document.getElementById('app');
+  app.hidden = false;
+  document.getElementById('whoAmI').textContent = ME.isAdmin ? 'RH (administração)' : ME.dept;
+  document.getElementById('stats').hidden = !ME.isAdmin;
+  document.getElementById('actionPanel').hidden = !ME.isAdmin;
+  document.getElementById('ruleNote').textContent = ME.isAdmin
+    ? 'Regra de alerta: fica pendente a partir do 1º dia do mês em que o período de gozo começa, até você marcar como enviado.'
+    : 'Períodos já enviados pro RH ficam travados aqui — qualquer ajuste depois disso é com o RH.';
+
+  if(!FIREBASE_CONFIGURED){
+    document.getElementById('syncLabel').textContent = 'Firebase não configurado';
+    document.getElementById('syncDot').classList.add('error');
+    render();
+    return;
+  }
+
+  try{
+    await auth.signInAnonymously();
+  }catch(e){
+    console.error('Falha na autenticação anônima', e);
+    document.getElementById('syncLabel').textContent = 'erro de autenticação';
+    document.getElementById('syncDot').classList.add('error');
+    render();
+    return;
+  }
+
+  document.getElementById('syncLabel').textContent = 'sincronizado ao vivo';
+  subscribe();
+}
+
+function subscribe(){
+  db.collection('colaboradores').onSnapshot(
+    (snap)=>{
+      DATA = snap.docs.map(d=> ({ id: d.id, ...d.data() }));
+      render();
+    },
+    (err)=>{
+      console.error('Erro ao sincronizar', err);
+      document.getElementById('syncDot').classList.add('error');
+      document.getElementById('syncLabel').textContent = 'erro de sincronização';
+      showToast('Erro ao sincronizar com o banco de dados.');
+    }
+  );
+}
+
+/* ---------- writes ---------- */
+async function saveGozo(empId, gozoIndex, inicioISO, dias){
+  const emp = DATA.find(e=>e.id === empId);
+  if(!emp) return;
+  const gozos = (emp.gozos || []).slice();
+  const entry = {
+    inicio: toBR(inicioISO),
+    dias: String(dias),
+    enviado: 'Não',
+    editado_por: ME.dept,
+    editado_em: new Date().toISOString(),
+    enviado_por: null
+  };
+  if(gozoIndex === -1){ gozos.push(entry); }
+  else{ gozos[gozoIndex] = { ...gozos[gozoIndex], ...entry, enviado: gozos[gozoIndex].enviado === 'Sim' ? gozos[gozoIndex].enviado : 'Não' }; }
+
+  emp.gozos = gozos;
+  render();
+
+  try{
+    await db.collection('colaboradores').doc(empId).update({ gozos });
+    showToast('Período salvo.');
+  }catch(e){
+    console.error(e);
+    showToast('Não deu pra salvar agora. Tenta de novo.');
+  }
+}
+
+async function markEnviado(empId, gozoIndex){
+  const emp = DATA.find(e=>e.id === empId);
+  if(!emp) return;
+  const gozos = (emp.gozos || []).slice();
+  gozos[gozoIndex] = { ...gozos[gozoIndex], enviado: 'Sim', enviado_por: 'RH', enviado_em: new Date().toISOString() };
+  emp.gozos = gozos;
+  render();
+  try{
+    await db.collection('colaboradores').doc(empId).update({ gozos });
+    showToast('Marcado como enviado.');
+  }catch(e){
+    console.error(e);
+    showToast('Não deu pra salvar agora. Tenta de novo.');
+  }
+}
+
+/* ---------- rendering ---------- */
+function enrich(){
+  DATA.forEach(emp=>{
+    emp.gozos = emp.gozos || [];
+    emp.gozos.forEach(g=> g.status = gozoStatus(g));
+    const rank = {critical:3, warn:2, future:1, ok:0};
+    emp.worstStatus = emp.gozos.reduce((worst,g)=> rank[g.status] > rank[worst] ? g.status : worst, 'ok');
+    emp.needsAttention = emp.gozos.some(g=> g.status==='critical' || g.status==='warn');
+  });
+}
+
+function renderStatsAndAction(){
+  if(!ME.isAdmin) return;
+  const total = DATA.length;
+  const vencidas = DATA.filter(e=> e.situacao === 'Férias Vencidas').length;
+  const atrasados = DATA.reduce((n,e)=> n + e.gozos.filter(g=>g.status==='critical').length, 0);
+  const pendentes = DATA.reduce((n,e)=> n + e.gozos.filter(g=>g.status==='warn').length, 0);
+
+  document.getElementById('stats').innerHTML = `
+    <div class="stat s-accent"><div class="icon-chip">${ICONS.users}</div><div class="body"><div class="n tnum">${total}</div><div class="l">Colaboradores na base</div></div></div>
+    <div class="stat s-warn"><div class="icon-chip">${ICONS.calendarAlert}</div><div class="body"><div class="n tnum">${vencidas}</div><div class="l">Com férias vencidas</div></div></div>
+    <div class="stat s-warn"><div class="icon-chip">${ICONS.clock}</div><div class="body"><div class="n tnum">${pendentes}</div><div class="l">Pendentes este mês</div></div></div>
+    <div class="stat s-critical"><div class="icon-chip">${ICONS.alertTriangle}</div><div class="body"><div class="n tnum">${atrasados}</div><div class="l">Atrasados</div></div></div>
+  `;
+
+  const actionItems = [];
+  DATA.forEach(emp=> emp.gozos.forEach(g=>{ if(g.status==='warn' || g.status==='critical') actionItems.push({emp,g}); }));
+  actionItems.sort((a,b)=>{
+    if(a.g.status !== b.g.status) return a.g.status==='critical' ? -1 : 1;
+    return parseBR(a.g.inicio) - parseBR(b.g.inicio);
+  });
+  document.getElementById('actionCount').textContent = actionItems.length + (actionItems.length===1?' item':' itens');
+  const list = document.getElementById('actionList');
+  if(actionItems.length===0){
+    list.innerHTML = `<div class="empty-note">Nada pendente hoje — tudo em dia.</div>`;
+  }else{
+    list.innerHTML = actionItems.map(({emp,g})=>{
+      const idx = emp.gozos.indexOf(g);
+      return `
+      <div class="action-row ${g.status}">
+        <div><div class="who">${emp.colaborador}</div><div class="dept">${emp.departamento} · ${emp.cargo}</div></div>
+        <div><span class="lbl">Início</span><span class="mono tnum">${fmt(parseBR(g.inicio))}</span></div>
+        <div><span class="lbl">Duração</span><span class="mono tnum">${g.dias} dia(s)</span></div>
+        <div style="display:flex; align-items:center; gap:8px;">
+          <span class="pill ${g.status}">${STATUS_LABEL[g.status]}</span>
+          <button class="btn btn-primary btn-small" onclick="markEnviado('${emp.id}', ${idx})">Marcar enviado</button>
+        </div>
+      </div>`;
+    }).join('');
+  }
+}
+
+function gozoRowHtml(emp, g, idx, editable){
+  const lockBadge = g.enviado === 'Sim' ? `<span class="pill ok">Enviado</span>` : `<span class="pill ${g.status}">${STATUS_LABEL[g.status]}</span>`;
+  const metaBits = [];
+  if(g.editado_por) metaBits.push(`editado por ${g.editado_por}`);
+  if(g.enviado === 'Sim' && g.enviado_por) metaBits.push(`enviado por ${g.enviado_por}`);
+  const meta = metaBits.length ? `<span class="gozo-meta">(${metaBits.join(' · ')})</span>` : '';
+  const canEdit = editable && g.enviado !== 'Sim';
+  const editBtn = canEdit ? `<button class="btn btn-ghost btn-small" onclick="openEdit('${emp.id}', ${idx})">editar</button>` : '';
+  const sendBtn = (ME.isAdmin && g.enviado !== 'Sim') ? `<button class="btn btn-primary btn-small" onclick="markEnviado('${emp.id}', ${idx})">marcar enviado</button>` : '';
+  return `<div class="gozo-row" data-emp="${emp.id}" data-idx="${idx}">
+    ${lockBadge}
+    <span class="d">${fmt(parseBR(g.inicio))}</span>
+    <span class="n">${g.dias}d</span>
+    ${meta}
+    ${editBtn}
+    ${sendBtn}
+  </div>`;
+}
+
+function editFormHtml(empId, idx, existing){
+  const iso = existing ? toISO(existing.inicio) : '';
+  const dias = existing ? existing.dias : '';
+  return `
+  <div class="edit-form" id="form-${empId}-${idx}">
+    <div class="field">
+      <label>Início</label>
+      <input type="date" id="date-${empId}-${idx}" value="${iso}">
+    </div>
+    <div class="field">
+      <label>Dias</label>
+      <input type="number" min="1" max="30" id="dias-${empId}-${idx}" value="${dias}">
+    </div>
+    <button class="btn btn-primary btn-small" onclick="submitEdit('${empId}', ${idx})">Salvar</button>
+    <button class="btn btn-ghost btn-small" onclick="closeEdit('${empId}', ${idx})">Cancelar</button>
+  </div>`;
+}
+
+window.openEdit = function(empId, idx){
+  const row = document.querySelector(`.gozo-row[data-emp="${empId}"][data-idx="${idx}"]`);
+  if(!row) return;
+  const emp = DATA.find(e=>e.id===empId);
+  const existing = idx >= 0 ? emp.gozos[idx] : null;
+  const holder = document.createElement('div');
+  holder.innerHTML = editFormHtml(empId, idx, existing);
+  row.replaceWith(holder.firstElementChild);
+};
+window.closeEdit = function(empId, idx){ render(); };
+window.submitEdit = function(empId, idx){
+  const dateVal = document.getElementById(`date-${empId}-${idx}`).value;
+  const diasVal = document.getElementById(`dias-${empId}-${idx}`).value;
+  if(!dateVal || !diasVal){ showToast('Preenche data e dias.'); return; }
+  saveGozo(empId, idx, dateVal, diasVal);
+};
+window.markEnviado = markEnviado;
+
+function empCardHtml(emp){
+  const situClass = emp.situacao === 'Férias Vencidas' ? 'vencidas' : 'nao-vencidas';
+  const rows = emp.gozos.map((g,idx)=> gozoRowHtml(emp, g, idx, true)).join('');
+  const canAddMore = emp.gozos.length < 3;
+  const addBtn = canAddMore ? `<button class="btn btn-ghost btn-small" onclick="openEdit('${emp.id}', -1)">+ adicionar período de gozo</button>` : '';
+  return `
+    <div class="emp-card">
+      <div class="emp-head">
+        <div>
+          <div class="emp-name">${emp.colaborador}</div>
+          <div class="emp-sub">${emp.departamento} · ${emp.cargo} · ${emp.contratacao}</div>
+        </div>
+        <div class="situ ${situClass}">${emp.situacao || '—'}</div>
+      </div>
+      <div class="gozo-list">
+        ${rows || '<span class="none-marker">sem período marcado</span>'}
+        ${addBtn}
+      </div>
+    </div>`;
+}
+
+function render(){
+  enrich();
+  renderStatsAndAction();
+
+  const q = document.getElementById('search').value.trim().toLowerCase();
+  let rows = ME.isAdmin ? DATA.slice() : DATA.filter(e=> e.departamento === ME.dept);
+  if(q) rows = rows.filter(e=> e.colaborador.toLowerCase().includes(q));
+  rows.sort((a,b)=> a.colaborador.localeCompare(b.colaborador));
+
+  document.getElementById('resultCount').textContent = `${rows.length} colaborador(es)`;
+  document.getElementById('cardList').innerHTML = rows.map(empCardHtml).join('') || `<div class="empty-note">Nenhum colaborador encontrado.</div>`;
+}
+
+document.getElementById('search').addEventListener('input', render);
+</script>
+</body>
+</html>
