@@ -183,6 +183,13 @@
   .setup-banner{ background:var(--warn-wash); color:var(--warn); border:1px solid var(--warn); border-radius:var(--radius-md); padding:14px 18px; font-size:13px; line-height:1.6; max-width:520px; }
   .setup-banner code{ background:rgba(0,0,0,0.06); padding:1px 5px; border-radius:4px; }
 
+  .btn-ghost.danger{ color:var(--critical); border-color:var(--critical-wash); }
+  .btn-ghost.danger:hover{ background:var(--critical-wash); }
+
+  .modal-overlay{ position:fixed; inset:0; background:rgba(13,18,16,0.45); display:flex; align-items:center; justify-content:center; z-index:60; padding:20px; }
+  .modal-card{ background:var(--surface); border-radius:var(--radius-lg); box-shadow:var(--shadow-lg); padding:26px 26px 22px; width:100%; max-width:400px; display:flex; flex-direction:column; gap:12px; }
+  .modal-card h3{ font-size:17px; }
+
   @media (max-width:760px){
     .stats{ grid-template-columns:repeat(2,1fr); }
     .action-row{ grid-template-columns:1fr; row-gap:6px; }
@@ -237,6 +244,7 @@
       <div class="appbar-right">
         <span class="session-pill"><span class="sync-dot" id="syncDot"></span><span id="syncLabel">conectando…</span></span>
         <span class="who-pill">Time: <strong id="whoAmI">—</strong></span>
+        <a href="#" id="settingsLink" hidden style="font-size:12px; font-weight:600;">alertas por e-mail</a>
         <a href="#" id="switchTeam" style="font-size:12px; font-weight:600;">trocar</a>
       </div>
     </div>
@@ -260,6 +268,7 @@
           <input type="search" id="search" placeholder="Buscar colaborador…">
           <span class="result-count" id="resultCount"></span>
         </div>
+        <button class="btn btn-primary btn-small" id="newEmpBtn" hidden>+ novo colaborador</button>
       </div>
       <div class="card-list" id="cardList"></div>
     </section>
@@ -269,6 +278,44 @@
       <span>Dados salvos no Firestore — qualquer computador que abrir este link vê e edita a mesma base.</span>
     </footer>
 
+  </div>
+</div>
+
+<!-- ============ MODAL: novo colaborador ============ -->
+<div class="modal-overlay" id="newEmpOverlay" hidden>
+  <div class="modal-card">
+    <h3>Novo colaborador</h3>
+    <div class="edit-form" style="flex-direction:column; align-items:stretch; background:none; border:none; padding:0;">
+      <div class="field"><label>Nome</label><input type="text" id="ne_nome" placeholder="Nome completo"></div>
+      <div class="field"><label>Departamento</label>
+        <select id="ne_dept"></select>
+      </div>
+      <div class="field"><label>Cargo</label><input type="text" id="ne_cargo" placeholder="Cargo"></div>
+      <div class="field"><label>Contratação</label>
+        <select id="ne_contratacao"><option>CLT</option><option>Estágio</option><option>PJ</option></select>
+      </div>
+      <div class="field"><label>Admissão</label><input type="date" id="ne_admissao"></div>
+      <div style="display:flex; gap:9px; margin-top:10px;">
+        <button class="btn btn-primary" id="ne_save">Adicionar</button>
+        <button class="btn btn-ghost" id="ne_cancel">Cancelar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ MODAL: alertas por e-mail ============ -->
+<div class="modal-overlay" id="settingsOverlay" hidden>
+  <div class="modal-card">
+    <h3>Alertas por e-mail</h3>
+    <p class="hint" style="font-size:12.5px; color:var(--text-muted); margin:0 0 4px;">Todo dia, quem estiver pendente ou atrasado pra enviar pra contabilidade cai num e-mail pros endereços abaixo.</p>
+    <div class="edit-form" style="flex-direction:column; align-items:stretch; background:none; border:none; padding:0;">
+      <div class="field"><label>E-mail 1</label><input type="email" id="cfg_email1" placeholder="voce@zukkin.com"></div>
+      <div class="field"><label>E-mail 2 (opcional)</label><input type="email" id="cfg_email2" placeholder="outra.pessoa@zukkin.com"></div>
+      <div style="display:flex; gap:9px; margin-top:10px;">
+        <button class="btn btn-primary" id="cfg_save">Salvar</button>
+        <button class="btn btn-ghost" id="cfg_cancel">Fechar</button>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -402,7 +449,9 @@ async function startApp(){
   document.getElementById('actionPanel').hidden = !ME.isAdmin;
   document.getElementById('ruleNote').textContent = ME.isAdmin
     ? 'Regra de alerta: fica pendente a partir do 1º dia do mês em que o período de gozo começa, até você marcar como enviado.'
-    : 'Períodos já enviados pro RH ficam travados aqui — qualquer ajuste depois disso é com o RH.';
+    : 'Você visualiza as férias do seu time. Pra incluir ou ajustar uma data, fale com o RH.';
+  document.getElementById('settingsLink').hidden = !ME.isAdmin;
+  document.getElementById('newEmpBtn').hidden = !ME.isAdmin;
 
   if(!FIREBASE_CONFIGURED){
     document.getElementById('syncLabel').textContent = 'Firebase não configurado';
@@ -423,7 +472,105 @@ async function startApp(){
 
   document.getElementById('syncLabel').textContent = 'sincronizado ao vivo';
   subscribe();
+  if(ME.isAdmin) loadAlertConfig();
 }
+
+/* ---------- RH: gestão de colaboradores ---------- */
+function slugify(name){
+  return name.toString().normalize('NFD').replace(/[̀-ͯ]/g,'')
+    .toLowerCase().trim().replace(/[^a-z0-9]+/g,'-').replace(/(^-|-$)/g,'');
+}
+
+const neOverlay = document.getElementById('newEmpOverlay');
+const neDeptSelect = document.getElementById('ne_dept');
+DEPTS.forEach(d=>{
+  const o = document.createElement('option');
+  o.value = d;
+  o.textContent = d === ADMIN_DEPT ? 'RH' : d;
+  neDeptSelect.appendChild(o);
+});
+document.getElementById('newEmpBtn').addEventListener('click', ()=>{ neOverlay.hidden = false; });
+document.getElementById('ne_cancel').addEventListener('click', ()=>{ neOverlay.hidden = true; });
+document.getElementById('ne_save').addEventListener('click', async ()=>{
+  const nome = document.getElementById('ne_nome').value.trim();
+  const dept = neDeptSelect.value;
+  const cargo = document.getElementById('ne_cargo').value.trim();
+  const contratacao = document.getElementById('ne_contratacao').value;
+  const admissaoISO = document.getElementById('ne_admissao').value;
+  if(!nome || !cargo || !admissaoISO){ showToast('Preenche nome, cargo e admissão.'); return; }
+  let id = slugify(nome);
+  if(DATA.some(e=>e.id===id)) id = id + '-' + Math.random().toString(36).slice(2,6);
+  const novo = {
+    colaborador: nome.toUpperCase(),
+    departamento: dept,
+    contratacao,
+    cargo,
+    admissao: toBR(admissaoISO),
+    periodo_aquisitivo_atual_inicio: null,
+    periodo_aquisitivo_atual_fim: null,
+    proximo_periodo_aquisitivo_inicio: null,
+    proximo_periodo_aquisitivo_fim: null,
+    limite: null,
+    situacao: 'Férias Não Vencidas',
+    fracionada: 'Não',
+    gozos: []
+  };
+  try{
+    await db.collection('colaboradores').doc(id).set(novo);
+    showToast('Colaborador adicionado.');
+    neOverlay.hidden = true;
+    document.getElementById('ne_nome').value = '';
+    document.getElementById('ne_cargo').value = '';
+    document.getElementById('ne_admissao').value = '';
+  }catch(e){
+    console.error(e);
+    showToast('Não deu pra salvar agora. Tenta de novo.');
+  }
+});
+
+window.confirmDeleteEmp = async function(empId){
+  const emp = DATA.find(e=>e.id===empId);
+  if(!emp) return;
+  if(!confirm(`Excluir ${emp.colaborador}? Essa ação não pode ser desfeita.`)) return;
+  try{
+    await db.collection('colaboradores').doc(empId).delete();
+    showToast('Colaborador excluído.');
+  }catch(e){
+    console.error(e);
+    showToast('Não deu pra excluir agora. Tenta de novo.');
+  }
+};
+
+/* ---------- RH: alertas por e-mail ---------- */
+const settingsOverlay = document.getElementById('settingsOverlay');
+document.getElementById('settingsLink').addEventListener('click', (e)=>{ e.preventDefault(); settingsOverlay.hidden = false; });
+document.getElementById('cfg_cancel').addEventListener('click', ()=>{ settingsOverlay.hidden = true; });
+
+async function loadAlertConfig(){
+  try{
+    const doc = await db.collection('config').doc('alertas').get();
+    if(doc.exists){
+      const d = doc.data();
+      document.getElementById('cfg_email1').value = (d.emails && d.emails[0]) || '';
+      document.getElementById('cfg_email2').value = (d.emails && d.emails[1]) || '';
+    }
+  }catch(e){ console.error('Erro ao carregar config de alertas', e); }
+}
+
+document.getElementById('cfg_save').addEventListener('click', async ()=>{
+  const e1 = document.getElementById('cfg_email1').value.trim();
+  const e2 = document.getElementById('cfg_email2').value.trim();
+  const emails = [e1, e2].filter(Boolean);
+  if(emails.length===0){ showToast('Coloca pelo menos um e-mail.'); return; }
+  try{
+    await db.collection('config').doc('alertas').set({ emails, atualizado_em: new Date().toISOString(), atualizado_por: ME.dept }, { merge:true });
+    showToast('E-mails de alerta salvos.');
+    settingsOverlay.hidden = true;
+  }catch(e){
+    console.error(e);
+    showToast('Não deu pra salvar agora. Tenta de novo.');
+  }
+});
 
 function subscribe(){
   db.collection('colaboradores').onSnapshot(
@@ -593,9 +740,10 @@ window.markEnviado = markEnviado;
 
 function empCardHtml(emp){
   const situClass = emp.situacao === 'Férias Vencidas' ? 'vencidas' : 'nao-vencidas';
-  const rows = emp.gozos.map((g,idx)=> gozoRowHtml(emp, g, idx, true)).join('');
+  const rows = emp.gozos.map((g,idx)=> gozoRowHtml(emp, g, idx, ME.isAdmin)).join('');
   const canAddMore = emp.gozos.length < 3;
-  const addBtn = canAddMore ? `<button class="btn btn-ghost btn-small" onclick="openEdit('${emp.id}', -1)">+ adicionar período de gozo</button>` : '';
+  const addBtn = (ME.isAdmin && canAddMore) ? `<button class="btn btn-ghost btn-small" onclick="openEdit('${emp.id}', -1)">+ adicionar período de gozo</button>` : '';
+  const delBtn = ME.isAdmin ? `<button class="btn btn-ghost btn-small danger" onclick="confirmDeleteEmp('${emp.id}')" title="Excluir colaborador">excluir colaborador</button>` : '';
   return `
     <div class="emp-card">
       <div class="emp-head">
@@ -609,6 +757,7 @@ function empCardHtml(emp){
         ${rows || '<span class="none-marker">sem período marcado</span>'}
         ${addBtn}
       </div>
+      ${delBtn ? `<div style="display:flex; justify-content:flex-end;">${delBtn}</div>` : ''}
     </div>`;
 }
 
