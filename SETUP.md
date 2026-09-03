@@ -55,6 +55,6 @@ Senhas de acesso por time (troque quando quiser, estão em `PIN_MAP` no `index.h
 | Zpromo | zukkinpromo |
 | Projetos | zukkinpj |
 | Qualidade | zukkinql |
-| Desenvolvimento | 8036 |
+| Desenvolvimento | zukkindesen |
 | Zrobot | zukkinrobot |
 | RH (administração — vê tudo, marca "Enviado") | zukkinrh |
