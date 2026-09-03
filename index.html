@@ -100,8 +100,8 @@
   .field label{ font-size:11.5px; color:var(--text-muted); font-weight:700; letter-spacing:0.02em; text-transform:uppercase; }
   .field select, .field input{ font:inherit; font-size:14.5px; background:var(--surface); border:1px solid var(--border); color:var(--text); border-radius:var(--radius-sm); padding:11px 13px; transition:border-color .15s, box-shadow .15s; }
   .field select:focus, .field input:focus{ outline:none; border-color:var(--accent-soft); box-shadow:0 0 0 3px var(--accent-wash); }
-  .field input[type="password"]{ letter-spacing:0.5em; font-family:"IBM Plex Mono",monospace; text-align:center; font-size:17px; padding:11px 8px; }
-  .field input[type="password"]::placeholder{ letter-spacing:0.5em; }
+  .field input[type="password"]{ letter-spacing:0.06em; font-family:"IBM Plex Mono",monospace; font-size:15px; padding:11px 13px; }
+  .field input[type="password"]::placeholder{ letter-spacing:0.06em; }
 
   .btn{ font-size:13.5px; font-weight:700; border-radius:var(--radius-sm); padding:10px 17px; border:1px solid transparent; cursor:pointer; display:inline-flex; align-items:center; justify-content:center; gap:6px; transition:background .15s, border-color .15s, transform .05s, box-shadow .15s; }
   .btn:active{ transform:translateY(1px); }
@@ -211,7 +211,7 @@
     </div>
     <div class="field">
       <label for="pinInput">Senha do time</label>
-      <input type="password" id="pinInput" inputmode="numeric" maxlength="4" placeholder="••••">
+      <input type="password" id="pinInput" maxlength="24" autocomplete="off" placeholder="senha do time">
     </div>
     <div class="lock-error" id="lockError"></div>
     <button class="btn btn-primary btn-block" id="lockSubmit">Entrar</button>
@@ -309,13 +309,13 @@ const ICONS = {
 
 /* ---------- config ---------- */
 const PIN_MAP = {
-  "Operações": "4821",
-  "Zpromo": "3067",
-  "Projetos": "5590",
-  "Qualidade": "1274",
+  "Operações": "zukkinop",
+  "Zpromo": "zukkinpromo",
+  "Projetos": "zukkinpj",
+  "Qualidade": "zukkinql",
   "Desenvolvimento": "8036",
-  "Zrobot": "2951",
-  "RH": "7413"
+  "Zrobot": "zukkinrobot",
+  "RH": "zukkinrh"
 };
 const ADMIN_DEPT = "RH";
 const DEPTS = Object.keys(PIN_MAP);
