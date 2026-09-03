@@ -149,6 +149,8 @@
   .filters{ display:flex; flex-wrap:wrap; gap:10px; align-items:center; }
   .filters input[type="search"]{ font:inherit; font-size:13px; background:var(--surface); border:1px solid var(--border); color:var(--text); border-radius:var(--radius-sm); padding:8px 12px; min-width:230px; flex:1 1 230px; }
   .filters input[type="search"]:focus{ outline:none; border-color:var(--accent-soft); box-shadow:0 0 0 3px var(--accent-wash); }
+  .filters select{ font:inherit; font-size:13px; background:var(--surface); border:1px solid var(--border); color:var(--text); border-radius:var(--radius-sm); padding:8px 10px; flex:0 0 auto; }
+  .filters select:focus{ outline:none; border-color:var(--accent-soft); box-shadow:0 0 0 3px var(--accent-wash); }
   .result-count{ font-size:11.5px; color:var(--text-faint); font-family:"IBM Plex Mono",monospace; margin-left:auto; }
 
   .card-list{ display:grid; grid-template-columns:repeat(auto-fill, minmax(258px, 1fr)); gap:12px; padding:16px 18px 18px; }
@@ -265,6 +267,7 @@
       <div class="panel-head" style="flex-wrap:wrap; gap:10px;">
         <div class="filters" style="flex:1;">
           <input type="search" id="search" placeholder="Buscar colaborador…">
+          <select id="deptFilter" hidden><option value="">Todos os times</option></select>
           <span class="result-count" id="resultCount"></span>
         </div>
         <button class="btn btn-primary btn-small" id="newEmpBtn" hidden>+ novo colaborador</button>
@@ -403,10 +406,19 @@ const deptSelectLock = document.getElementById('deptSelectLock');
 DEPTS.forEach(d=>{
   const o = document.createElement('option');
   o.value = d;
-  o.textContent = d === ADMIN_DEPT ? 'RH — administração (vê tudo)' : d;
+  o.textContent = d === ADMIN_DEPT ? 'RH — administração' : d;
   deptSelectLock.appendChild(o);
 });
 if(!FIREBASE_CONFIGURED){ document.getElementById('setupBanner').hidden = false; }
+
+const deptFilterEl = document.getElementById('deptFilter');
+DEPTS.forEach(d=>{
+  const o = document.createElement('option');
+  o.value = d;
+  o.textContent = d === ADMIN_DEPT ? 'RH' : d;
+  deptFilterEl.appendChild(o);
+});
+deptFilterEl.addEventListener('change', render);
 
 function tryUnlock(){
   const dept = deptSelectLock.value;
@@ -451,6 +463,7 @@ async function startApp(){
     : 'Você inclui e ajusta os períodos de férias do seu time. Quem marca como enviado pra contabilidade é o RH.';
   document.getElementById('settingsLink').hidden = !ME.isAdmin;
   document.getElementById('newEmpBtn').hidden = !ME.isAdmin;
+  document.getElementById('deptFilter').hidden = !ME.isAdmin;
 
   if(!FIREBASE_CONFIGURED){
     document.getElementById('syncLabel').textContent = 'Firebase não configurado';
@@ -774,7 +787,9 @@ function render(){
   renderStatsAndAction();
 
   const q = document.getElementById('search').value.trim().toLowerCase();
+  const deptFilterVal = ME.isAdmin ? document.getElementById('deptFilter').value : '';
   let rows = ME.isAdmin ? DATA.slice() : DATA.filter(e=> e.departamento === ME.dept);
+  if(deptFilterVal) rows = rows.filter(e=> e.departamento === deptFilterVal);
   if(q) rows = rows.filter(e=> e.colaborador.toLowerCase().includes(q));
   rows.sort((a,b)=> a.colaborador.localeCompare(b.colaborador));
 
