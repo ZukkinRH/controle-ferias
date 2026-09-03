@@ -13,6 +13,11 @@
 <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore-compat.js"></script>
 
+<!-- EmailJS (envio instantâneo do aviso de "Agendar Férias" pro RH, direto do navegador,
+     sem precisar de servidor próprio). Veja SETUP.md pra criar a conta gratuita e
+     preencher EMAILJS_PUBLIC_KEY / EMAILJS_SERVICE_ID / EMAILJS_TEMPLATE_ID abaixo. -->
+<script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
+
 <style>
   :root{
     --bg:#F6F4F4;
@@ -313,6 +318,7 @@
     <div class="edit-form" style="flex-direction:column; align-items:stretch; background:none; border:none; padding:0;">
       <div class="field"><label>E-mail 1</label><input type="email" id="cfg_email1" placeholder="voce@zukkin.com"></div>
       <div class="field"><label>E-mail 2 (opcional)</label><input type="email" id="cfg_email2" placeholder="outra.pessoa@zukkin.com"></div>
+      <div class="field"><label>E-mail 3 (opcional)</label><input type="email" id="cfg_email3" placeholder="mais.uma.pessoa@zukkin.com"></div>
       <div style="display:flex; gap:9px; margin-top:10px;">
         <button class="btn btn-primary" id="cfg_save">Salvar</button>
         <button class="btn btn-ghost" id="cfg_cancel">Fechar</button>
@@ -345,6 +351,19 @@ if(FIREBASE_CONFIGURED){
   db = firebase.firestore();
   auth = firebase.auth();
 }
+
+/* ============================================================
+   CONFIGURAÇÃO DO EMAILJS (envio instantâneo do botão "Agendar Férias")
+   Crie uma conta grátis em https://www.emailjs.com, adicione um serviço
+   de e-mail (ex: Gmail) e um template, e preencha os 3 valores abaixo.
+   Veja o SETUP.md do repositório pro passo a passo. Enquanto ficarem como
+   estão, o botão avisa que o envio de e-mail ainda não foi configurado.
+   ============================================================ */
+const EMAILJS_PUBLIC_KEY  = "SUA_PUBLIC_KEY_AQUI";
+const EMAILJS_SERVICE_ID  = "SEU_SERVICE_ID_AQUI";
+const EMAILJS_TEMPLATE_ID = "SEU_TEMPLATE_ID_AQUI";
+const EMAILJS_CONFIGURED = EMAILJS_PUBLIC_KEY !== "SUA_PUBLIC_KEY_AQUI";
+if(EMAILJS_CONFIGURED && window.emailjs){ emailjs.init({ publicKey: EMAILJS_PUBLIC_KEY }); }
 </script>
 
 <script>
@@ -484,7 +503,7 @@ async function startApp(){
 
   document.getElementById('syncLabel').textContent = 'sincronizado ao vivo';
   subscribe();
-  if(ME.isAdmin) loadAlertConfig();
+  loadAlertConfig();
 }
 
 /* ---------- RH: gestão de colaboradores ---------- */
@@ -558,13 +577,17 @@ const settingsOverlay = document.getElementById('settingsOverlay');
 document.getElementById('settingsLink').addEventListener('click', (e)=>{ e.preventDefault(); settingsOverlay.hidden = false; });
 document.getElementById('cfg_cancel').addEventListener('click', ()=>{ settingsOverlay.hidden = true; });
 
+let ALERT_EMAILS = [];
+
 async function loadAlertConfig(){
   try{
     const doc = await db.collection('config').doc('alertas').get();
     if(doc.exists){
       const d = doc.data();
+      ALERT_EMAILS = (d.emails || []).filter(Boolean);
       document.getElementById('cfg_email1').value = (d.emails && d.emails[0]) || '';
       document.getElementById('cfg_email2').value = (d.emails && d.emails[1]) || '';
+      document.getElementById('cfg_email3').value = (d.emails && d.emails[2]) || '';
     }
   }catch(e){ console.error('Erro ao carregar config de alertas', e); }
 }
@@ -572,10 +595,12 @@ async function loadAlertConfig(){
 document.getElementById('cfg_save').addEventListener('click', async ()=>{
   const e1 = document.getElementById('cfg_email1').value.trim();
   const e2 = document.getElementById('cfg_email2').value.trim();
-  const emails = [e1, e2].filter(Boolean);
+  const e3 = document.getElementById('cfg_email3').value.trim();
+  const emails = [e1, e2, e3].filter(Boolean);
   if(emails.length===0){ showToast('Coloca pelo menos um e-mail.'); return; }
   try{
     await db.collection('config').doc('alertas').set({ emails, atualizado_em: new Date().toISOString(), atualizado_por: ME.dept }, { merge:true });
+    ALERT_EMAILS = emails;
     showToast('E-mails de alerta salvos.');
     settingsOverlay.hidden = true;
   }catch(e){
@@ -754,6 +779,38 @@ window.submitEdit = function(empId, idx){
 };
 window.markEnviado = markEnviado;
 
+/* ---------- aviso "Agendar Férias" (e-mail instantâneo pro RH) ---------- */
+window.agendarFerias = async function(empId){
+  const emp = DATA.find(e=>e.id===empId);
+  if(!emp) return;
+  if(!EMAILJS_CONFIGURED){
+    showToast('Envio de e-mail ainda não configurado — veja o SETUP.md.');
+    return;
+  }
+  if(ALERT_EMAILS.length === 0){
+    showToast('Cadastra pelo menos um e-mail em "alertas por e-mail" antes.');
+    return;
+  }
+  const btn = document.querySelector(`.agendar-btn[data-emp="${empId}"]`);
+  if(btn){ btn.disabled = true; btn.textContent = 'enviando…'; }
+  try{
+    await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, {
+      to_email: ALERT_EMAILS.join(','),
+      colaborador: emp.colaborador,
+      departamento: emp.departamento,
+      cargo: emp.cargo,
+      solicitado_por: ME.isAdmin ? 'RH' : ME.dept,
+      data_solicitacao: new Date().toLocaleString('pt-BR')
+    });
+    showToast('Aviso enviado por e-mail.');
+  }catch(e){
+    console.error('Erro ao enviar e-mail via EmailJS', e);
+    showToast('Não deu pra enviar o e-mail agora. Tenta de novo.');
+  }finally{
+    if(btn){ btn.disabled = false; btn.textContent = 'agendar férias'; }
+  }
+};
+
 function canManage(emp){
   return ME.isAdmin || emp.departamento === ME.dept;
 }
@@ -764,7 +821,11 @@ function empCardHtml(emp){
   const rows = emp.gozos.map((g,idx)=> gozoRowHtml(emp, g, idx, manage)).join('');
   const canAddMore = emp.gozos.length < 3;
   const addBtn = (manage && canAddMore) ? `<button class="btn btn-ghost btn-small add-gozo-btn" data-emp="${emp.id}" onclick="openEdit('${emp.id}', -1)">+ adicionar período de gozo</button>` : '';
+  const agendarBtn = manage ? `<button class="btn btn-ghost btn-small agendar-btn" data-emp="${emp.id}" onclick="agendarFerias('${emp.id}')" title="Avisa o RH por e-mail que este colaborador precisa agendar férias">agendar férias</button>` : '';
   const delBtn = ME.isAdmin ? `<button class="btn btn-ghost btn-small danger" onclick="confirmDeleteEmp('${emp.id}')" title="Excluir colaborador">excluir colaborador</button>` : '';
+  const proximoAno = (ME.isAdmin && (emp.proximo_periodo_aquisitivo_inicio || emp.proximo_periodo_aquisitivo_fim))
+    ? `<div class="emp-sub" style="margin-top:-2px;">Próx. período aquisitivo: <span class="mono tnum">${emp.proximo_periodo_aquisitivo_inicio || '—'} a ${emp.proximo_periodo_aquisitivo_fim || '—'}</span> <span style="color:var(--text-faint); font-style:italic;">(ilustrativo)</span></div>`
+    : '';
   return `
     <div class="emp-card">
       <div class="emp-head">
@@ -774,11 +835,15 @@ function empCardHtml(emp){
         </div>
         <div class="situ ${situClass}">${emp.situacao || '—'}</div>
       </div>
+      ${proximoAno}
       <div class="gozo-list">
         ${rows || '<span class="none-marker">sem período marcado</span>'}
         ${addBtn}
       </div>
-      ${delBtn ? `<div style="display:flex; justify-content:flex-end;">${delBtn}</div>` : ''}
+      <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
+        <div>${agendarBtn}</div>
+        <div>${delBtn}</div>
+      </div>
     </div>`;
 }
 
